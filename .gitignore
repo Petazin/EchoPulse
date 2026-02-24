@@ -1,0 +1,7 @@
+*.bak
+*.log
+agent_activity.log
+GEMINI.md
+.DS_Store
+# Temporary files
+/SavedVariables/
