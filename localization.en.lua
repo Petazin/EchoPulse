@@ -37,3 +37,19 @@ ECHOPULSE_COL_ACTIVE = "On"
 ECHOPULSE_COL_CHAN = "Channel"
 ECHOPULSE_COL_MSG = "Message"
 ECHOPULSE_COL_RATE = "Rate (s)"
+
+ECHOPULSE_OPT_COMBAT = "Pause in Combat"
+ECHOPULSE_OPT_INSTANCE = "Pause in Instances"
+ECHOPULSE_TIP_COMBAT = "Automatically pauses message sending while in combat."
+ECHOPULSE_TIP_INSTANCE = "Automatically pauses message sending while inside a dungeon, raid, or arena."
+
+ECHOPULSE_OPT_AFK = "Pause when AFK"
+ECHOPULSE_TIP_AFK = "Automatically pauses message sending when you are Away from Keyboard."
+
+ECHOPULSE_COL_CITY = "City"
+ECHOPULSE_TIP_CITY = "If checked, this message will only be sent while you are in a Capital City (Sanctuary/Inn)."
+
+ECHOPULSE_OPT_RNG = "Humanize (RNG)"
+ECHOPULSE_TIP_RNG = "Adds a random variation (in seconds) to each message delay to simulate a human and bypass anti-spam algorithms."
+ECHOPULSE_OPT_VARIANCE = "Variance (s)"
+ECHOPULSE_TIP_VARIANCE = "Maximum amount of seconds (+ or -) the timer can vary for each dispatch."

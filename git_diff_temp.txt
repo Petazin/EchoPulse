@@ -1,0 +1,445 @@
+﻿diff --git a/EchoPulse.lua b/EchoPulse.lua
+index 2c1e070..ba7b2f6 100644
+--- a/EchoPulse.lua
++++ b/EchoPulse.lua
+@@ -20,6 +20,7 @@ local entryTimers = {} -- Transient timers for each entry
+ local EP_queue = {}
+ local EP_queueFrame
+ local EP_flashTimer
++local globalMessageDelay = 0
+ 
+ local function EP_FlashClientIcon() 
+ 	if FlashClientIcon then FlashClientIcon() end 
+@@ -31,8 +32,12 @@ local function EP_RunQueue()
+ 	if EP_flashTimer then
+ 		EP_flashTimer:Cancel()
+ 	end
+-	while #EP_queue > 0 do
+-		table.remove(EP_queue, 1)()
++	if #EP_queue > 0 then
++		local func = table.remove(EP_queue, 1)
++		xpcall(func, geterrorhandler())
++	end
++	if #EP_queue == 0 and EP_queueFrame then
++		EP_queueFrame:Hide()
+ 	end
+ end
+ 
+@@ -169,10 +174,27 @@ function EchoPulse_OnEvent(self, event)
+ 				enabled = true,
+ 				message = "EchoPulse " .. version,
+ 				channel = "say",
+-				rate = 60
++				rate = 60,
++				cityOnly = false
+ 			})
+ 		end
+ 
++		if EP_characterConfig.smartPauseCombat == nil then
++			EP_characterConfig.smartPauseCombat = true
++		end
++		if EP_characterConfig.smartPauseInstance == nil then
++			EP_characterConfig.smartPauseInstance = true
++		end
++		if EP_characterConfig.smartPauseAFK == nil then
++			EP_characterConfig.smartPauseAFK = true
++		end
++		if EP_characterConfig.smartRNG == nil then
++			EP_characterConfig.smartRNG = false
++		end
++		if EP_characterConfig.smartRNGVariance == nil then
++			EP_characterConfig.smartRNGVariance = 5
++		end
++
+ 		-- Register Options Panel
+ 		EchoPulse_CreateOptionsPanel()
+ 
+@@ -185,8 +207,10 @@ function EchoPulse_On()
+ 	isPulseActive = true
+ 	DEFAULT_CHAT_FRAME:AddMessage(ECHOPULSE_ACTIVE, 1, 1, 1)
+ 	-- Reset timers to trig immediately
+-	for i in ipairs(EP_characterConfig.entries) do
+-		entryTimers[i] = EP_characterConfig.entries[i].rate
++	-- Reset timers and pre-calculate first randomized targets
++	for i, entry in ipairs(EP_characterConfig.entries) do
++		entryTimers[i] = entry.rate
++		entry.nextTargetRate = entry.rate
+ 	end
+ 	if EchoPulseOptionsPanel and EchoPulseOptionsPanel.refreshToggle then
+ 		EchoPulseOptionsPanel.refreshToggle()
+@@ -204,26 +228,63 @@ end
+ function EchoPulse_OnUpdate(self, elapsed)
+ 	if not isPulseActive then return end
+ 	
+-	-- Update queue frame visibility
++	-- Update queue frame visibility FIRST so we never get stuck in combat with a visible frame
+ 	if #EP_queue > 0 then
+ 		EP_queueFrame:SetFrameStrata('TOOLTIP')
+ 		EP_queueFrame:SetFrameLevel(UIParent:GetFrameLevel() + 1000)
+ 		EP_queueFrame:Show()
++		return
+ 	else
+ 		EP_queueFrame:Hide()
+ 	end
+-
+-	if #EP_queue > 0 then return end
+ 	
++	if globalMessageDelay > 0 then
++		globalMessageDelay = globalMessageDelay - elapsed
++		return
++	end
++
++	-- Smart Pauses
++	if EP_characterConfig.smartPauseCombat and UnitAffectingCombat("player") then return end
++	if EP_characterConfig.smartPauseInstance then
++		local inInstance, instanceType = IsInInstance()
++		if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena") then return end
++	end
++	if EP_characterConfig.smartPauseAFK and UnitIsAFK("player") then return end
++
+ 	for i, entry in ipairs(EP_characterConfig.entries) do
+ 		if entry.enabled then
+ 			entryTimers[i] = (entryTimers[i] or 0) + elapsed
+-			if entryTimers[i] >= (entry.rate or 60) then
+-				local system, channelNumber = EchoPulse_GetChannel(entry.channel)
+-				if system then
+-					EP_SendChatMessage(entry.message, system, nil, channelNumber)
++			
++			-- Generate target rate just in time if missing
++			if not entry.nextTargetRate then
++				entry.nextTargetRate = entry.rate or 60
++			end
++
++			if entryTimers[i] >= entry.nextTargetRate then
++				if not entry.cityOnly or IsResting() then
++					local system, channelNumber = EchoPulse_GetChannel(entry.channel)
++					if system then
++						EP_SendChatMessage(entry.message, system, nil, channelNumber)
++					end
+ 				end
+ 				entryTimers[i] = 0
++
++				-- Calculate next cycle rate with RNG
++				local baseRate = entry.rate or 60
++				if EP_characterConfig.smartRNG and EP_characterConfig.smartRNGVariance then
++					local var = tonumber(EP_characterConfig.smartRNGVariance) or 0
++					if var > baseRate - 1 then var = baseRate - 1 end -- Prevent negative rates
++					if var > 0 then
++						entry.nextTargetRate = baseRate + math.random(-var, var)
++					else
++						entry.nextTargetRate = baseRate
++					end
++				else
++					entry.nextTargetRate = baseRate
++				end
++				
++				globalMessageDelay = 1.5
++				break
+ 			end
+ 		end
+ 	end
+@@ -273,9 +334,108 @@ function EchoPulse_CreateOptionsPanel()
+ 	desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+ 	desc:SetText(ECHOPULSE_CONFIG_DESC)
+ 
++	-- Smart Pauses
++	local combatCheck = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
++	combatCheck:SetSize(24, 24)
++	combatCheck:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", -5, -10)
++	combatCheck.text = combatCheck:CreateFontString(nil, "OVERLAY", "GameFontNormal")
++	combatCheck.text:SetPoint("LEFT", combatCheck, "RIGHT", 0, 1)
++	combatCheck.text:SetText(ECHOPULSE_OPT_COMBAT)
++	combatCheck.tooltipText = ECHOPULSE_TIP_COMBAT
++	combatCheck:SetScript("OnClick", function(self) EP_characterConfig.smartPauseCombat = self:GetChecked() end)
++	combatCheck:SetScript("OnEnter", function(self)
++		if self.tooltipText then
++			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
++			GameTooltip:SetText(self.tooltipText, nil, nil, nil, nil, true)
++			GameTooltip:Show()
++		end
++	end)
++	combatCheck:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
++
++	local instanceCheck = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
++	instanceCheck:SetSize(24, 24)
++	instanceCheck:SetPoint("LEFT", combatCheck.text, "RIGHT", 20, 0)
++	instanceCheck.text = instanceCheck:CreateFontString(nil, "OVERLAY", "GameFontNormal")
++	instanceCheck.text:SetPoint("LEFT", instanceCheck, "RIGHT", 0, 1)
++	instanceCheck.text:SetText(ECHOPULSE_OPT_INSTANCE)
++	instanceCheck.tooltipText = ECHOPULSE_TIP_INSTANCE
++	instanceCheck:SetScript("OnClick", function(self) EP_characterConfig.smartPauseInstance = self:GetChecked() end)
++	instanceCheck:SetScript("OnEnter", function(self)
++		if self.tooltipText then
++			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
++			GameTooltip:SetText(self.tooltipText, nil, nil, nil, nil, true)
++			GameTooltip:Show()
++		end
++	end)
++	instanceCheck:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
++
++	local afkCheck = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
++	afkCheck:SetSize(24, 24)
++	afkCheck:SetPoint("LEFT", instanceCheck.text, "RIGHT", 20, 0)
++	afkCheck.text = afkCheck:CreateFontString(nil, "OVERLAY", "GameFontNormal")
++	afkCheck.text:SetPoint("LEFT", afkCheck, "RIGHT", 0, 1)
++	afkCheck.text:SetText(ECHOPULSE_OPT_AFK)
++	afkCheck.tooltipText = ECHOPULSE_TIP_AFK
++	afkCheck:SetScript("OnClick", function(self) EP_characterConfig.smartPauseAFK = self:GetChecked() end)
++	afkCheck:SetScript("OnEnter", function(self)
++		if self.tooltipText then
++			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
++			GameTooltip:SetText(self.tooltipText, nil, nil, nil, nil, true)
++			GameTooltip:Show()
++		end
++	end)
++	afkCheck:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
++
++	local rngCheck = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
++	rngCheck:SetSize(24, 24)
++	rngCheck:SetPoint("LEFT", afkCheck.text, "RIGHT", 20, 0)
++	rngCheck.text = rngCheck:CreateFontString(nil, "OVERLAY", "GameFontNormal")
++	rngCheck.text:SetPoint("LEFT", rngCheck, "RIGHT", 0, 1)
++	rngCheck.text:SetText(ECHOPULSE_OPT_RNG)
++	rngCheck.tooltipText = ECHOPULSE_TIP_RNG
++	rngCheck:SetScript("OnEnter", function(self)
++		if self.tooltipText then
++			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
++			GameTooltip:SetText(self.tooltipText, nil, nil, nil, nil, true)
++			GameTooltip:Show()
++		end
++	end)
++	rngCheck:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
++
++	local rngVar = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
++	rngVar:SetSize(30, 20)
++	rngVar:SetPoint("LEFT", rngCheck.text, "RIGHT", 10, 0)
++	rngVar:SetAutoFocus(false)
++	rngVar:SetNumeric(true)
++	rngVar:SetMaxLetters(2)
++	rngVar:SetScript("OnEnter", function(self)
++		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
++		GameTooltip:SetText(ECHOPULSE_TIP_VARIANCE, nil, nil, nil, nil, true)
++		GameTooltip:Show()
++	end)
++	rngVar:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
++	rngVar:SetScript("OnTextChanged", function(self)
++		local v = tonumber(self:GetText()) or 0
++		if v > 60 then v = 60; self:SetText("60") end
++		EP_characterConfig.smartRNGVariance = v
++	end)
++
++	local function UpdateRNGState()
++		local isRNG = rngCheck:GetChecked()
++		EP_characterConfig.smartRNG = isRNG
++		if isRNG then
++			rngVar:Enable()
++			rngVar:SetAlpha(1.0)
++		else
++			rngVar:Disable()
++			rngVar:SetAlpha(0.5)
++		end
++	end
++	rngCheck:SetScript("OnClick", UpdateRNGState)
++
+ 	-- Headers
+ 	local hOn = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+-	hOn:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -15)
++	hOn:SetPoint("TOPLEFT", combatCheck, "BOTTOMLEFT", 5, -10)
+ 	hOn:SetText(ECHOPULSE_COL_ACTIVE)
+ 	
+ 	local hChan = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+@@ -286,8 +446,13 @@ function EchoPulse_CreateOptionsPanel()
+ 	hMsg:SetPoint("LEFT", hOn, "LEFT", 95, 0)
+ 	hMsg:SetText(ECHOPULSE_COL_MSG)
+ 
++	local hCity = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
++	hCity:SetPoint("RIGHT", panel, "RIGHT", -115, 0)
++	hCity:SetPoint("TOP", hOn, "TOP", 0, 0)
++	hCity:SetText(ECHOPULSE_COL_CITY)
++
+ 	local hRate = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+-	hRate:SetPoint("RIGHT", panel, "RIGHT", -65, 0)
++	hRate:SetPoint("RIGHT", panel, "RIGHT", -55, 0)
+ 	hRate:SetPoint("TOP", hOn, "TOP", 0, 0)
+ 	hRate:SetText(ECHOPULSE_COL_RATE)
+ 
+@@ -330,9 +495,23 @@ function EchoPulse_CreateOptionsPanel()
+ 				row.msg = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+ 				row.msg:SetHeight(20)
+ 				row.msg:SetPoint("LEFT", 95, 0)
+-				row.msg:SetPoint("RIGHT", -100, 0)
++				row.msg:SetPoint("RIGHT", -150, 0)
+ 				row.msg:SetAutoFocus(false)
+ 				
++				-- City Only Checkbox
++				row.cityCheck = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
++				row.cityCheck:SetSize(24, 24)
++				row.cityCheck:SetPoint("RIGHT", -110, 0)
++				row.cityCheck.tooltipText = ECHOPULSE_TIP_CITY
++				row.cityCheck:SetScript("OnEnter", function(self)
++					if self.tooltipText then
++						GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
++						GameTooltip:SetText(self.tooltipText, nil, nil, nil, nil, true)
++						GameTooltip:Show()
++					end
++				end)
++				row.cityCheck:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
++
+ 				-- Rate
+ 				row.rate = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+ 				row.rate:SetSize(40, 20)
+@@ -353,20 +532,34 @@ function EchoPulse_CreateOptionsPanel()
+ 			row:Show()
+ 
+ 			-- Set values
++			row.check:SetScript("OnClick", nil)
+ 			row.check:SetChecked(entry.enabled)
+ 			row.check:SetScript("OnClick", function(self) entry.enabled = self:GetChecked() end)
+ 			
+-			row.chan:SetText(entry.channel)
+-			row.chan:SetScript("OnTextChanged", function(self) entry.channel = self:GetText() end)
++			row.chan:SetScript("OnTextChanged", nil)
++			row.chan:SetText(entry.channel or "")
++			row.chan:SetScript("OnTextChanged", function(self, isUserInput) 
++				if isUserInput then entry.channel = self:GetText() end 
++			end)
+ 			
+-			row.msg:SetText(entry.message)
+-			row.msg:SetScript("OnTextChanged", function(self) entry.message = self:GetText() end)
++			row.msg:SetScript("OnTextChanged", nil)
++			row.msg:SetText(entry.message or "")
++			row.msg:SetScript("OnTextChanged", function(self, isUserInput) 
++				if isUserInput then entry.message = self:GetText() end 
++			end)
+ 			
+-			row.rate:SetText(tostring(entry.rate))
+-			row.rate:SetScript("OnTextChanged", function(self) 
+-				local r = tonumber(self:GetText()) or 10
+-				if r < MAX_RATE then r = MAX_RATE end
+-				entry.rate = r 
++			row.cityCheck:SetScript("OnClick", nil)
++			row.cityCheck:SetChecked(entry.cityOnly)
++			row.cityCheck:SetScript("OnClick", function(self) entry.cityOnly = self:GetChecked() end)
++
++			row.rate:SetScript("OnTextChanged", nil)
++			row.rate:SetText(tostring(entry.rate or 60))
++			row.rate:SetScript("OnTextChanged", function(self, isUserInput) 
++				if isUserInput then
++					local r = tonumber(self:GetText()) or 10
++					if r < MAX_RATE then r = MAX_RATE end
++					entry.rate = r 
++				end
+ 			end)
+ 			
+ 			row.del:SetScript("OnClick", function()
+@@ -380,6 +573,14 @@ function EchoPulse_CreateOptionsPanel()
+ 	end
+ 
+ 	panel:SetScript("OnShow", function()
++		if combatCheck then combatCheck:SetChecked(EP_characterConfig.smartPauseCombat) end
++		if instanceCheck then instanceCheck:SetChecked(EP_characterConfig.smartPauseInstance) end
++		if afkCheck then afkCheck:SetChecked(EP_characterConfig.smartPauseAFK) end
++		if rngCheck then 
++			rngCheck:SetChecked(EP_characterConfig.smartRNG)
++			UpdateRNGState()
++		end
++		if rngVar then rngVar:SetText(tostring(EP_characterConfig.smartRNGVariance or 5)) end
+ 		content:SetWidth(scrollFrame:GetWidth() - 20)
+ 		RefreshRows()
+ 	end)
+@@ -393,7 +594,8 @@ function EchoPulse_CreateOptionsPanel()
+ 			enabled = true,
+ 			message = "New Message",
+ 			channel = "say",
+-			rate = 60
++			rate = 60,
++			cityOnly = false
+ 		})
+ 		RefreshRows()
+ 	end)
+@@ -405,9 +607,9 @@ function EchoPulse_CreateOptionsPanel()
+ 	
+ 	local function UpdateToggleBtn()
+ 		if isPulseActive then
+-			toggleBtn:SetText("|cffff0000" .. ECHOPULSE_INACTIVE:gsub("%.", "") .. "|r")
++			toggleBtn:SetText("|cffff0000" .. "Desactivar EchoPulse" .. "|r")
+ 		else
+-			toggleBtn:SetText("|cff00ff00" .. ECHOPULSE_ACTIVE:gsub("%.", "") .. "|r")
++			toggleBtn:SetText("|cff00ff00" .. "Activar EchoPulse" .. "|r")
+ 		end
+ 	end
+ 	
+diff --git a/localization.en.lua b/localization.en.lua
+index 5420232..8a289b1 100644
+--- a/localization.en.lua
++++ b/localization.en.lua
+@@ -37,3 +37,19 @@ ECHOPULSE_COL_ACTIVE = "On"
+ ECHOPULSE_COL_CHAN = "Channel"
+ ECHOPULSE_COL_MSG = "Message"
+ ECHOPULSE_COL_RATE = "Rate (s)"
++
++ECHOPULSE_OPT_COMBAT = "Pause in Combat"
++ECHOPULSE_OPT_INSTANCE = "Pause in Instances"
++ECHOPULSE_TIP_COMBAT = "Automatically pauses message sending while in combat."
++ECHOPULSE_TIP_INSTANCE = "Automatically pauses message sending while inside a dungeon, raid, or arena."
++
++ECHOPULSE_OPT_AFK = "Pause when AFK"
++ECHOPULSE_TIP_AFK = "Automatically pauses message sending when you are Away from Keyboard."
++
++ECHOPULSE_COL_CITY = "City"
++ECHOPULSE_TIP_CITY = "If checked, this message will only be sent while you are in a Capital City (Sanctuary/Inn)."
++
++ECHOPULSE_OPT_RNG = "Humanize (RNG)"
++ECHOPULSE_TIP_RNG = "Adds a random variation (in seconds) to each message delay to simulate a human and bypass anti-spam algorithms."
++ECHOPULSE_OPT_VARIANCE = "Variance (s)"
++ECHOPULSE_TIP_VARIANCE = "Maximum amount of seconds (+ or -) the timer can vary for each dispatch."
+diff --git a/localization.es.lua b/localization.es.lua
+index 33553c4..ec4e4cf 100644
+--- a/localization.es.lua
++++ b/localization.es.lua
+@@ -38,4 +38,20 @@ if (GetLocale() == "esES" or GetLocale() == "esMX") then
+ 	ECHOPULSE_COL_CHAN = "Canal"
+ 	ECHOPULSE_COL_MSG = "Mensaje"
+ 	ECHOPULSE_COL_RATE = "Freq (s)"
++
++	ECHOPULSE_OPT_COMBAT = "Pausar en Combate"
++	ECHOPULSE_OPT_INSTANCE = "Pausar en Instancias"
++	ECHOPULSE_TIP_COMBAT = "Detiene autom├íticamente los env├¡os mientras est├ís en combate."
++	ECHOPULSE_TIP_INSTANCE = "Detiene autom├íticamente los env├¡os mientras est├ís dentro de una mazmorra, banda o arena."
++
++	ECHOPULSE_OPT_AFK = "Pausar Ausente (AFK)"
++	ECHOPULSE_TIP_AFK = "Detiene autom├íticamente los env├¡os cuando est├ís Ausente."
++
++	ECHOPULSE_COL_CITY = "Ciudad"
++	ECHOPULSE_TIP_CITY = "Si est├í marcado, este anuncio solo se enviar├í si te encuentras en una Ciudad Capital (Santuario/Posada)."
++
++	ECHOPULSE_OPT_RNG = "Humanizar (RNG)"
++	ECHOPULSE_TIP_RNG = "A├▒ade una variaci├│n aleatoria (en segundos) a cada mensaje para simular a un humano y burlar sistemas anti-spam."
++	ECHOPULSE_OPT_VARIANCE = "Varianza (s)"
++	ECHOPULSE_TIP_VARIANCE = "Cantidad m├íxima de segundos (+ o -) que el temporizador podr├í variar en cada env├¡o."
+ end
+diff --git a/localization.fr.lua b/localization.fr.lua
+index ed562b8..aab36b9 100644
+--- a/localization.fr.lua
++++ b/localization.fr.lua
+@@ -38,4 +38,20 @@ if (GetLocale() == "frFR") then
+ 	ECHOPULSE_COL_CHAN = "Canal"
+ 	ECHOPULSE_COL_MSG = "Message"
+ 	ECHOPULSE_COL_RATE = "Freq (s)"
++
++	ECHOPULSE_OPT_COMBAT = "Pause en Combat"
++	ECHOPULSE_OPT_INSTANCE = "Pause en Instance"
++	ECHOPULSE_TIP_COMBAT = "Met automatiquement en pause l'envoi de messages pendant un combat."
++	ECHOPULSE_TIP_INSTANCE = "Met automatiquement en pause l'envoi de messages dans un donjon, raid, ou ar├¿ne."
++
++	ECHOPULSE_OPT_AFK = "Pause si absent (AFK)"
++	ECHOPULSE_TIP_AFK = "Met automatiquement en pause l'envoi de messages lorsque vous ├¬tes Abs."
++
++	ECHOPULSE_COL_CITY = "Ville"
++	ECHOPULSE_TIP_CITY = "Si coch├®, ce message ne sera envoy├® que lorsque vous ├¬tes dans une capitale (Sanctuaire/Auberge)."
++
++	ECHOPULSE_OPT_RNG = "Humaniser (RNG)"
++	ECHOPULSE_TIP_RNG = "Ajoute une variation al├®atoire (en secondes) ├á chaque message pour simuler un humain et d├®jouer les anti-spams."
++	ECHOPULSE_OPT_VARIANCE = "Variance (s)"
++	ECHOPULSE_TIP_VARIANCE = "Nombre maximum de secondes (+ ou -) dont le d├®lai peut diff├®rer ├á chaque envoi."
+ end

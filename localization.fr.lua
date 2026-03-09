@@ -38,4 +38,20 @@ if (GetLocale() == "frFR") then
 	ECHOPULSE_COL_CHAN = "Canal"
 	ECHOPULSE_COL_MSG = "Message"
 	ECHOPULSE_COL_RATE = "Freq (s)"
+
+	ECHOPULSE_OPT_COMBAT = "Pause en Combat"
+	ECHOPULSE_OPT_INSTANCE = "Pause en Instance"
+	ECHOPULSE_TIP_COMBAT = "Met automatiquement en pause l'envoi de messages pendant un combat."
+	ECHOPULSE_TIP_INSTANCE = "Met automatiquement en pause l'envoi de messages dans un donjon, raid, ou arène."
+
+	ECHOPULSE_OPT_AFK = "Pause si absent (AFK)"
+	ECHOPULSE_TIP_AFK = "Met automatiquement en pause l'envoi de messages lorsque vous êtes Abs."
+
+	ECHOPULSE_COL_CITY = "Ville"
+	ECHOPULSE_TIP_CITY = "Si coché, ce message ne sera envoyé que lorsque vous êtes dans une capitale (Sanctuaire/Auberge)."
+
+	ECHOPULSE_OPT_RNG = "Humaniser (RNG)"
+	ECHOPULSE_TIP_RNG = "Ajoute une variation aléatoire (en secondes) à chaque message pour simuler un humain et déjouer les anti-spams."
+	ECHOPULSE_OPT_VARIANCE = "Variance (s)"
+	ECHOPULSE_TIP_VARIANCE = "Nombre maximum de secondes (+ ou -) dont le délai peut différer à chaque envoi."
 end

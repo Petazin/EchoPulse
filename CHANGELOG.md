@@ -1,5 +1,11 @@
 # Changelog - EchoPulse
 
+## [09/03/2026] v2.3.0
+
+- Added Smart Spamming features: Auto-pause in combat, in instances, and while AFK.
+- Added intelligent zone restriction: Option to only send messages while in Capital Cities (Sanctuary/Inn).
+- Added Anti-Spam (Humanization) feature: Random time variance to message delays to mimic human behavior.
+
 ## [24/02/2026] v2.2.0
 
 - Integrated internal message queuing logic.

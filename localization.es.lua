@@ -38,4 +38,20 @@ if (GetLocale() == "esES" or GetLocale() == "esMX") then
 	ECHOPULSE_COL_CHAN = "Canal"
 	ECHOPULSE_COL_MSG = "Mensaje"
 	ECHOPULSE_COL_RATE = "Freq (s)"
+
+	ECHOPULSE_OPT_COMBAT = "Pausar en Combate"
+	ECHOPULSE_OPT_INSTANCE = "Pausar en Instancias"
+	ECHOPULSE_TIP_COMBAT = "Detiene automáticamente los envíos mientras estás en combate."
+	ECHOPULSE_TIP_INSTANCE = "Detiene automáticamente los envíos mientras estás dentro de una mazmorra, banda o arena."
+
+	ECHOPULSE_OPT_AFK = "Pausar Ausente (AFK)"
+	ECHOPULSE_TIP_AFK = "Detiene automáticamente los envíos cuando estás Ausente."
+
+	ECHOPULSE_COL_CITY = "Ciudad"
+	ECHOPULSE_TIP_CITY = "Si está marcado, este anuncio solo se enviará si te encuentras en una Ciudad Capital (Santuario/Posada)."
+
+	ECHOPULSE_OPT_RNG = "Humanizar (RNG)"
+	ECHOPULSE_TIP_RNG = "Añade una variación aleatoria (en segundos) a cada mensaje para simular a un humano y burlar sistemas anti-spam."
+	ECHOPULSE_OPT_VARIANCE = "Varianza (s)"
+	ECHOPULSE_TIP_VARIANCE = "Cantidad máxima de segundos (+ o -) que el temporizador podrá variar en cada envío."
 end
