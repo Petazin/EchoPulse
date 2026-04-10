@@ -1,5 +1,9 @@
 # Changelog - EchoPulse
 
+## [02/04/2026] v2.3.1
+
+- Bugfix: Corregido un fallo donde los mensajes destinados a la Hermandad ("g") fallaban silenciosamente debido a una validación estricta de variables `nil` en la API moderna de chat (C_ChatInfo/SendChatMessage).
+
 ## [09/03/2026] v2.3.0
 
 - Added Smart Spamming features: Auto-pause in combat, in instances, and while AFK.

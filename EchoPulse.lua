@@ -50,18 +50,23 @@ local function EP_Enqueue(f)
 end
 
 local function EP_SendChatMessage(msg, chatType, languageID, channel, callback)
-	if chatType == 'CHANNEL' or chatType == 'SAY' or chatType == 'YELL' then
-		EP_Enqueue(function()
+	local function doSend()
+		if channel then
 			SendChatMessage(msg, chatType, languageID, channel)
-			if callback then
-				callback()
-			end
-		end)
-	else
-		SendChatMessage(msg, chatType, languageID, channel)
+		elseif languageID then
+			SendChatMessage(msg, chatType, languageID)
+		else
+			SendChatMessage(msg, chatType)
+		end
 		if callback then
 			callback()
 		end
+	end
+
+	if chatType == 'CHANNEL' or chatType == 'SAY' or chatType == 'YELL' then
+		EP_Enqueue(doSend)
+	else
+		doSend()
 	end
 end
 
